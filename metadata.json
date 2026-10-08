@@ -1,0 +1,8 @@
+{
+  "name": "SARA — Autonomous Personal AI Operating Assistant",
+  "description": "Autonomous Personal AI Operating Assistant & Agent Platform featuring deep reasoning thinking mode, Live voice conversations, tool registry, task planner, permissions engine, and automated execution.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
