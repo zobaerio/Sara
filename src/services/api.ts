@@ -170,7 +170,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
     });
-    return res.json();
+    const data = await res.json().catch(() => ({ error: 'Connector request failed' }));
+    if (!res.ok) {
+      throw new Error(data.error || `Connector request failed (${res.status})`);
+    }
+    return data;
   },
 
   async getActivity(): Promise<ActivityLog[]> {
