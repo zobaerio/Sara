@@ -372,6 +372,16 @@ try {
   console.warn('Could not read existing local data, using initialized state');
 }
 
+// The current repository has no OAuth/token-backed connector implementation.
+// Never trust seeded or persisted demo flags as proof that an external account
+// is actually connected.
+db.connectedApps = db.connectedApps.map((app) => ({
+  ...app,
+  connected: false,
+  account: undefined,
+  lastSync: undefined,
+}));
+
 function persistDb() {
   try {
     fs.writeFileSync(storageFile, JSON.stringify(db, null, 2));
@@ -1101,12 +1111,21 @@ app.post('/api/apps/toggle', (req: Request, res: Response) => {
   const { id } = req.body;
   const appItem = db.connectedApps.find((a) => a.id === id);
   if (!appItem) return res.status(404).json({ error: 'App not found' });
-  appItem.connected = !appItem.connected;
-  if (appItem.connected) {
-    appItem.lastSync = new Date().toISOString();
+
+  if (!appItem.connected) {
+    return res.status(501).json({
+      error: `${appItem.name} OAuth/credential setup is not implemented yet. No connection was created.`,
+      code: 'CONNECTOR_NOT_CONFIGURED',
+    });
   }
+
+  // Disconnecting a displayed connection is safe; connecting requires a real
+  // OAuth/credential flow and must never be simulated by flipping a boolean.
+  appItem.connected = false;
+  delete appItem.account;
+  delete appItem.lastSync;
   persistDb();
-  logActivity('TOOL_EXECUTION', `Connected App Status Changed`, `${appItem.name} is now ${appItem.connected ? 'CONNECTED' : 'DISCONNECTED'}`);
+  logActivity('TOOL_EXECUTION', 'Connected App Disconnected', `${appItem.name} marked disconnected.`, 'WARNING');
   res.json(appItem);
 });
 
