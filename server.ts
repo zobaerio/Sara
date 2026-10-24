@@ -6,6 +6,10 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI, ThinkingLevel, Modality } from '@google/genai';
 import fs from 'fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 dotenv.config();
 
@@ -745,90 +749,81 @@ app.post('/api/agent/execute-step', async (req: Request, res: Response) => {
     step.startTime = new Date().toISOString();
     persistDb();
 
-    // Execute tool based on tool type
-    let stepOutput: any = null;
-    let stepError: string | null = null;
-
+    // Execute only tools with a real implementation. Unsupported integrations must
+    // fail honestly rather than returning fabricated deployment, browser, or Git results.
     try {
       if (step.tool === 'fs_inspect') {
-        const rootFiles = fs.readdirSync(__dirname);
+        const rootFiles = fs.readdirSync(__dirname).filter((name) => !name.startsWith('.'));
         stepOutput = {
-          files: rootFiles.filter((f) => !f.startsWith('.')),
+          files: rootFiles,
           totalFiles: rootFiles.length,
           verified: true,
-        };
-      } else if (step.tool === 'fs_write') {
-        stepOutput = {
-          modified: ['src/App.tsx'],
-          syntaxValid: true,
-          verified: true,
+          verificationDetails: 'Directory contents read from the running server filesystem.',
         };
       } else if (step.tool === 'code_verify') {
+        const lint = await execFileAsync('npm', ['run', 'lint'], {
+          cwd: __dirname,
+          timeout: 120_000,
+          maxBuffer: 2 * 1024 * 1024,
+        });
+        const build = await execFileAsync('npm', ['run', 'build'], {
+          cwd: __dirname,
+          timeout: 180_000,
+          maxBuffer: 4 * 1024 * 1024,
+        });
         stepOutput = {
           typeCheck: 'PASS',
-          diagnostics: 0,
+          lintOutput: lint.stdout.slice(-4000),
+          buildOutput: build.stdout.slice(-4000),
           verified: true,
+          verificationDetails: 'npm run lint and npm run build both exited successfully.',
         };
-      } else if (step.tool === 'vercel_deploy') {
-        // Real Vercel deployment verification simulation
+      } else if (step.tool === 'git_inspect') {
+        const branchResult = await execFileAsync('git', ['branch', '--show-current'], {
+          cwd: __dirname,
+          timeout: 10_000,
+          maxBuffer: 256 * 1024,
+        });
+        const statusResult = await execFileAsync('git', ['status', '--short'], {
+          cwd: __dirname,
+          timeout: 10_000,
+          maxBuffer: 256 * 1024,
+        });
+        const logResult = await execFileAsync('git', ['log', '-1', '--format=%h %s'], {
+          cwd: __dirname,
+          timeout: 10_000,
+          maxBuffer: 256 * 1024,
+        });
         stepOutput = {
-          deploymentId: 'dpl_' + Math.random().toString(36).substring(2, 10),
-          url: 'https://sara-autonomous.vercel.app',
-          status: 'READY',
-          responseTimeMs: 84,
+          branch: branchResult.stdout.trim() || '(detached HEAD)',
+          workingTree: statusResult.stdout.trim() || 'clean',
+          latestCommit: logResult.stdout.trim(),
           verified: true,
-        };
-      } else if (step.tool === 'git_commit' || step.tool === 'git_inspect') {
-        stepOutput = {
-          branch: 'main',
-          clean: true,
-          latestCommit: 'feat: autonomous agent execution step verified',
-          verified: true,
-        };
-      } else if (step.tool === 'web_research') {
-        stepOutput = {
-          sourcesGathered: 4,
-          synthesis: 'Verified up-to-date documentation and current system specifications.',
-          uncertaintyScore: 'LOW',
-          verified: true,
-        };
-      } else if (step.tool === 'browser_action') {
-        stepOutput = {
-          url: 'https://example.com/app',
-          pageState: 'LOADED_200_OK',
-          elementsFound: 18,
-          actionResult: 'Form submitted and response inspected.',
-          verified: true,
-        };
-      } else if (step.tool === 'workspace_action') {
-        stepOutput = {
-          service: 'Google Workspace',
-          action: 'Calendar & Drive check',
-          itemsProcessed: 2,
-          verified: true,
+          verificationDetails: 'Branch, working tree, and latest commit read from Git.',
         };
       } else {
-        stepOutput = {
-          executed: true,
-          message: `Tool ${step.tool} executed successfully.`,
-          verified: true,
-        };
+        throw new Error(
+          `Tool "${step.tool}" is not connected to a real executor yet. No action was performed; configure the required integration before retrying.`,
+        );
       }
     } catch (toolErr: any) {
-      stepError = toolErr.message;
-      // Self-Healing recovery step!
-      step.recoveryAttempts = (step.recoveryAttempts || 0) + 1;
-      if (step.recoveryAttempts <= 2) {
-        logActivity('SYSTEM_ERROR', 'Self-Healing Engine Engaged', `Recovering from error in ${step.tool}: ${stepError}`);
-        // Apply recovery fix
-        stepOutput = {
-          recovered: true,
-          recoveryAttempt: step.recoveryAttempts,
-          details: 'Self-healing engine applied automated patch and re-verified.',
-          verified: true,
-        };
-        stepError = null;
-      }
+      stepError = toolErr?.message || 'Tool execution failed for an unknown reason.';
+      step.recoveryAttempts = step.recoveryAttempts || 0;
+      step.status = 'FAILED';
+      step.error = stepError;
+      task.status = 'FAILED';
+      task.error = {
+        code: 'TOOL_EXECUTION_FAILED',
+        message: stepError,
+        recoverable: false,
+        recoveryAttempts: step.recoveryAttempts,
+      };
+      logActivity(
+        'SYSTEM_ERROR',
+        'Tool execution failed honestly',
+        `Task "${task.title}" could not complete tool "${step.tool}": ${stepError}`,
+        'ERROR',
+      );
     }
 
     if (stepError) {
