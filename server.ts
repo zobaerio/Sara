@@ -522,8 +522,8 @@ Keep operational reports concise, truthful, and actionable.`;
       });
       responseText = response.text || '';
     } catch (modelErr: any) {
-      console.warn(`Primary model call to ${modelName} failed (${modelErr.message}). Retrying with fallback...`);
-      // If thinking model failed with 503 or error, retry with gemini-3.8-flash
+      console.warn(`Primary model call to ${modelName} failed (${modelErr.message}).`);
+      // Retry with the fast model only when the requested reasoning model fails.
       if (modelName !== 'gemini-3.8-flash') {
         try {
           const fallbackResponse = await ai.models.generateContent({
@@ -533,16 +533,27 @@ Keep operational reports concise, truthful, and actionable.`;
           });
           responseText = fallbackResponse.text || '';
           modelName = 'gemini-3.8-flash (Auto-Recovered)';
-        } catch (fErr: any) {
-          responseText = `I have analyzed the request: "${message}". I will create and manage an autonomous execution plan for this goal.`;
+        } catch (fallbackError: any) {
+          console.error('AI fallback model failed:', fallbackError);
+          return res.status(502).json({
+            error: 'Both the selected AI model and fallback model failed. No task was marked as executed.',
+            code: 'AI_PROVIDER_UNAVAILABLE',
+          });
         }
       } else {
-        responseText = `I have processed your objective: "${message}". Initializing autonomous agent workflow.`;
+        console.error('Fast AI model failed:', modelErr);
+        return res.status(502).json({
+          error: 'The AI provider request failed. No task was marked as executed.',
+          code: 'AI_PROVIDER_UNAVAILABLE',
+        });
       }
     }
 
     if (!responseText) {
-      responseText = 'I have analyzed the request and prepared the execution plan.';
+      return res.status(502).json({
+        error: 'The AI provider returned an empty response. No task was marked as executed.',
+        code: 'AI_EMPTY_RESPONSE',
+      });
     }
 
     // Check if the response suggests creating an autonomous task
