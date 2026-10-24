@@ -760,6 +760,9 @@ app.post('/api/agent/execute-step', async (req: Request, res: Response) => {
     step.startTime = new Date().toISOString();
     persistDb();
 
+    let stepOutput: any = null;
+    let stepError: string | null = null;
+
     // Execute only tools with a real implementation. Unsupported integrations must
     // fail honestly rather than returning fabricated deployment, browser, or Git results.
     try {
