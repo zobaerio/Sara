@@ -119,7 +119,11 @@ export const api = {
 
   async triggerAutomation(id: string): Promise<AutomationWorkflow> {
     const res = await fetch(`/api/automations/${id}/trigger`, { method: 'POST' });
-    return res.json();
+    const data = await res.json().catch(() => ({ error: 'Automation request failed' }));
+    if (!res.ok) {
+      throw new Error(data.error || `Automation request failed (${res.status})`);
+    }
+    return data;
   },
 
   async getMemories(): Promise<MemoryItem[]> {
