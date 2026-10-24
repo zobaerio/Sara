@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Link2,
   CheckCircle2,
@@ -7,11 +7,22 @@ import {
   Shield,
   Layers,
   Sparkles,
+  AlertCircle,
 } from 'lucide-react';
 import { useSara } from '../../context/SaraContext';
 
 export const ConnectedAppsView: React.FC = () => {
   const { connectedApps, toggleConnectedApp } = useSara();
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+
+  const handleToggle = async (id: string) => {
+    setConnectionError(null);
+    try {
+      await toggleConnectedApp(id);
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : 'Connector action failed.');
+    }
+  };
 
   return (
     <div className="flex-1 overflow-y-auto p-6 bg-slate-950/40 custom-scrollbar">
@@ -34,6 +45,15 @@ export const ConnectedAppsView: React.FC = () => {
             {connectedApps.filter((a) => a.connected).length} / {connectedApps.length} Active
           </span>
         </div>
+
+        {connectionError && (
+          <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>{connectionError}</p>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {connectedApps.map((app) => (
@@ -88,14 +108,14 @@ export const ConnectedAppsView: React.FC = () => {
                   {app.lastSync ? `Sync: ${new Date(app.lastSync).toLocaleDateString()}` : 'Not synced'}
                 </span>
                 <button
-                  onClick={() => toggleConnectedApp(app.id)}
+                  onClick={() => void handleToggle(app.id)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
                     app.connected
                       ? 'bg-slate-800 hover:bg-rose-950 hover:text-rose-300 text-slate-300 border border-slate-700'
                       : 'bg-cyan-600 hover:bg-cyan-500 text-white shadow'
                   }`}
                 >
-                  {app.connected ? 'Disconnect' : 'Connect Account'}
+                  {app.connected ? 'Disconnect' : 'Setup required'}
                 </button>
               </div>
             </div>
