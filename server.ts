@@ -996,16 +996,29 @@ app.post('/api/automations', (req: Request, res: Response) => {
 app.post('/api/automations/:id/trigger', (req: Request, res: Response) => {
   const auto = db.automations.find((a) => a.id === req.params.id);
   if (!auto) return res.status(404).json({ error: 'Automation not found' });
+  if (!auto.enabled) {
+    return res.status(409).json({ error: 'This automation is disabled. Enable it before running.' });
+  }
 
+  // A trigger is not a successful run. Until every action is dispatched to a
+  // registered executor and its result verified, report the run as blocked.
   auto.runsCount = (auto.runsCount || 0) + 1;
   auto.lastRun = {
     timestamp: new Date().toISOString(),
-    status: 'SUCCESS',
-    output: `Manual trigger executed: ${auto.actions.length} action(s) completed without error.`,
+    status: 'FAILED',
+    output: 'BLOCKED: no automation action executor is configured. No actions were performed.',
   };
   persistDb();
-  logActivity('AUTOMATION', 'Automation Workflow Triggered', `Ran "${auto.name}" manually.`);
-  res.json(auto);
+  logActivity(
+    'SYSTEM_ERROR',
+    'Automation blocked: executor unavailable',
+    `Workflow "${auto.name}" was triggered, but its actions were not executed because no real action executor is registered.`,
+    'WARNING',
+  );
+  res.status(501).json({
+    error: 'Automation execution is not configured yet. The workflow was not run; connect real action executors before retrying.',
+    automation: auto,
+  });
 });
 
 // Memory Engine CRUD
