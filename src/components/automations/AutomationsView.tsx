@@ -19,11 +19,15 @@ import { useSara } from '../../context/SaraContext';
 export const AutomationsView: React.FC = () => {
   const { automations, triggerAutomationWorkflow } = useSara();
   const [runningId, setRunningId] = useState<string | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
 
   const handleRun = async (id: string) => {
     setRunningId(id);
+    setRunError(null);
     try {
       await triggerAutomationWorkflow(id);
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : 'Automation could not run.');
     } finally {
       setRunningId(null);
     }
@@ -51,6 +55,18 @@ export const AutomationsView: React.FC = () => {
             {automations.length} Active Workflows
           </span>
         </div>
+
+        {runError && (
+          <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <p className="font-semibold">Workflow was not executed</p>
+                <p className="mt-1 text-amber-100/80">{runError}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Workflows List */}
         <div className="space-y-4">
@@ -127,10 +143,14 @@ export const AutomationsView: React.FC = () => {
                 {/* Last Run verified outcome */}
                 {auto.lastRun && (
                   <div className="pt-2 flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/60">
-                    <div className="flex items-center space-x-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Last Result:</span>
-                      <span className="text-slate-300 font-mono">{auto.lastRun.output}</span>
+                    <div className="flex items-center space-x-2 min-w-0">
+                      {auto.lastRun.status === 'SUCCESS' ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                      ) : (
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                      )}
+                      <span className="shrink-0">Last Result:</span>
+                      <span className={`font-mono ${auto.lastRun.status === 'SUCCESS' ? 'text-slate-300' : 'text-amber-200'}`}>{auto.lastRun.output}</span>
                     </div>
                     <span className="text-[10px] text-slate-500 font-mono">
                       {new Date(auto.lastRun.timestamp).toLocaleTimeString()}
